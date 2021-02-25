@@ -69,7 +69,7 @@ Hope you are now excited with testing out Prism on your machine. To get started,
 <!-- USAGE -->
 
 ## Usage
-n/a
+See [this jupyter notebook](https://github.com/hklchung/UpliftModelling/blob/main/How%20to%20run%20uplift_model.ipynb) for further details on how to use this package.
   
 <!-- CONTRIBUTING -->
 

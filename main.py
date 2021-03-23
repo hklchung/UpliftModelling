@@ -149,7 +149,7 @@ class uplift_model:
         Parameters
         ----------
         X : pandas.core.frame.DataFrame
-            Here are your model's featuress.
+            Here are your model's features.
         t : pandas.core.series.Series
             Here is a boolean series for treatment.
         y : pandas.core.series.Series
@@ -182,6 +182,49 @@ class uplift_model:
         temp['ite'] = [(temp.iloc[x]['mu1'] - temp.iloc[x]['conversion']) if temp.iloc[x]['treatment'] == 0 else (temp.iloc[x]['conversion'] - temp.iloc[x]['mu0']) for x  in range(0, len(temp))]
     
         return temp['mu0'], temp['mu1'], temp['ite']
+    
+    def calculate_propensity_diff(self, X, t, y, clf0, clf1):
+        '''
+        This function takes in X, t, y and two classifier models, namely the
+        mu0 and mu1, and outputs the two models' predictions and the
+        uplift which is taken as mu1 - mu0.
+
+        Parameters
+        ----------
+        X : pandas.core.frame.DataFrame
+            Here are your model's features.
+        t : pandas.core.series.Series
+            Here is a boolean series for treatment.
+        y : pandas.core.series.Series
+            Here is a boolean series for outcome.
+        clf0 : xgboost.sklearn.XGBClassifier
+            Our mu0 model -- model trained on control group.
+        clf1 : xgboost.sklearn.XGBClassifier
+            Our mu1 model -- model trained on treatment group.
+
+        Returns
+        -------
+        mu0(x) : pandas.core.series.Series
+            mu0's predictions.
+        mu1(x) : pandas.core.series.Series
+            mu1's predictions.
+        uplift : pandas.core.series.Series
+            mu1 - mu0.
+
+        '''
+        temp = X[:]
+        temp['treatment'] = t
+        temp['conversion'] = y
+        
+        # Using mu0 and mu1 to predict propensity scores
+        temp['mu0'] = clf0.predict_proba(temp.iloc[:,:-2])[:,1]
+        temp['mu1'] = clf1.predict_proba(temp.iloc[:,:-3])[:,1]
+        
+        # Difference between treatment propensity and control propensity gives
+        # the uplift in tlearner
+        temp['uplift'] = temp['mu1'] - temp['mu0']
+        
+        return temp['mu0'], temp['mu1'], temp['uplift']
     
     def tau_training(self, X, t, y, ite):
         '''
@@ -314,6 +357,46 @@ class uplift_model:
         temp['uplift'] = (0.5*temp['tau0_ite']) + (0.5*temp['tau1_ite'])
         
         return temp['uplift']
+    
+    def tlearner_uplift(self, X, t, y):
+        '''
+        This functiion takes in X, t, y and outputs a table with uplift
+        predictions and 2 classifier models (mu0 and mu1).
+
+        Parameters
+        ----------
+        X : pandas.core.frame.DataFrame
+            Here are your model's featuress.
+        t : pandas.core.series.Series
+            Here is a boolean series for treatment.
+        y : pandas.core.series.Series
+            Here is a boolean series for outcome.
+
+        Returns
+        -------
+        final : pandas.core.frame.DataFrame
+            DESCRIPTION.
+        clf0 : xgboost.sklearn.XGBClassifier
+            Our mu0 model -- model trained on control group.
+        clf1 : xgboost.sklearn.XGBClassifier
+            Our mu1 model -- model trained on treatment group.
+
+        '''
+        # Calling mu_training func
+        clf0, clf1 = self.mu_training(X, t, y)
+        
+        # Calling calculate_propensity_diff func (this is the uplift from tlearner)
+        mu0, mu1, uplift = self.calculate_propensity_diff(X, t, y, clf0, clf1)
+        
+        # Prepare a final table for output
+        final = X[:]
+        final['treatment'] = t
+        final['conversion'] = y
+        final['mu0'] = mu0
+        final['mu1'] = mu1
+        final['uplift'] = uplift
+        
+        return final, clf0, clf1
     
     def xlearner_uplift(self, X, t, y):
         '''

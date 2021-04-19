@@ -77,34 +77,40 @@ class uplift_model:
         train0 = temp[temp['treatment'] == 0]
         train1 = temp[temp['treatment'] == 1]
         
-        # Resample control group
-        df_majority = train0[train0.conversion==0]
-        df_minority = train0[train0.conversion==1]
-        df_minority_upsampled = resample(df_minority, 
-                                         replace=True,     # sample with replacement
-                                         n_samples=len(df_majority),    # to match majority class
-                                         random_state=123) # reproducible results
+        # If binary outcome majority class exceeds 70% then do upsampling on minority class, else do nothing
+        if max(temp['conversion'].value_counts(normalize=True)) > 0.7:
         
-        # Combine majority class with upsampled minority class
-        df_upsampled = pd.concat([df_majority, df_minority_upsampled])
-        
-        # Resample treatment group
-        df_majority2 = train1[train1.conversion==0]
-        df_minority2 = train1[train1.conversion==1]
-        df_minority2_upsampled = resample(df_minority2, 
-                                         replace=True,     # sample with replacement
-                                         n_samples=len(df_majority2),    # to match majority class
-                                         random_state=123) # reproducible results
-        
-        # Combine majority class with upsampled minority class
-        df_upsampled2 = pd.concat([df_majority2, df_minority2_upsampled])
-        
-        # Combine both upsampled sets together
-        train = df_upsampled.append(df_upsampled2)
-        
-        # Resplit the control/treatment groups
-        train0 = train[train['treatment'] == 0]
-        train1 = train[train['treatment'] == 1]
+            # Resample control group
+            df_majority = train0[train0.conversion==0]
+            df_minority = train0[train0.conversion==1]
+            df_minority_upsampled = resample(df_minority, 
+                                             replace=True,     # sample with replacement
+                                             n_samples=len(df_majority),    # to match majority class
+                                             random_state=123) # reproducible results
+            
+            # Combine majority class with upsampled minority class
+            df_upsampled = pd.concat([df_majority, df_minority_upsampled])
+            
+            # Resample treatment group
+            df_majority2 = train1[train1.conversion==0]
+            df_minority2 = train1[train1.conversion==1]
+            df_minority2_upsampled = resample(df_minority2, 
+                                             replace=True,     # sample with replacement
+                                             n_samples=len(df_majority2),    # to match majority class
+                                             random_state=123) # reproducible results
+            
+            # Combine majority class with upsampled minority class
+            df_upsampled2 = pd.concat([df_majority2, df_minority2_upsampled])
+            
+            # Combine both upsampled sets together
+            train = df_upsampled.append(df_upsampled2)
+            
+            # Resplit the control/treatment groups
+            train0 = train[train['treatment'] == 0]
+            train1 = train[train['treatment'] == 1]
+            
+        else:
+            pass
         
         # Split control/treatment groups into train and validation sets
         X_train0, X_val0, y_train0, y_val0 = train_test_split(train0.iloc[:,:-2], train0['conversion'], test_size=0.2, random_state=0)
@@ -357,6 +363,92 @@ class uplift_model:
         temp['uplift'] = (0.5*temp['tau0_ite']) + (0.5*temp['tau1_ite'])
         
         return temp['uplift']
+    
+    def slearner_uplift(self, X, t, y):
+        '''
+        This functiion takes in X, t, y and outputs a table with uplift
+        predictions and single classifier model.
+
+        Parameters
+        ----------
+        X : pandas.core.frame.DataFrame
+            Here are your model's featuress.
+        t : pandas.core.series.Series
+            Here is a boolean series for treatment.
+        y : pandas.core.series.Series
+            Here is a boolean series for outcome.
+
+        Returns
+        -------
+        final : pandas.core.frame.DataFrame
+            DESCRIPTION.
+        clf0 : xgboost.sklearn.XGBClassifier
+            Our mu0 model -- model trained on control group.
+
+        '''
+        temp = X[:]
+        temp['treatment'] = t
+        temp['conversion'] = y
+        
+        train = temp
+        
+        # If binary outcome majority class exceeds 70% then do upsampling on minority class, else do nothing
+        if max(train['conversion'].value_counts(normalize=True)) > 0.7:
+        
+            # Resample control group
+            df_majority = train[train.conversion==0]
+            df_minority = train[train.conversion==1]
+            df_minority_upsampled = resample(df_minority, 
+                                             replace=True,     # sample with replacement
+                                             n_samples=len(df_majority),    # to match majority class
+                                             random_state=123) # reproducible results
+            
+            # Combine majority class with upsampled minority class
+            train = pd.concat([df_majority, df_minority_upsampled])
+            
+        else:
+            pass
+        
+        # Split control/treatment groups into train and validation sets
+        X_train0, X_val0, y_train0, y_val0 = train_test_split(train.iloc[:,:-1], train['conversion'], test_size=0.2, random_state=0)
+        
+        # Train a regular propensity model for the conversion target column
+        clf0 = XGBClassifier(eta = 0.5, max_depth = 5, seed = 0, gamma = 2)
+        clf0.fit(X_train0, y_train0)
+        clf0_predictions = clf0.predict(X_val0)
+        clf0_accuracy = accuracy_score(y_val0, clf0_predictions)
+        clf0_f1 = f1_score(y_val0, clf0_predictions)
+        clf0_score = clf0.predict_proba(X_val0)
+        clf0_gini = (roc_auc_score(y_val0, clf0_score[:,1]) - 0.5) * 2
+        print("Conversion propensity XGBoost Classifier: [Accuracy: {:.4f}, F1-score: {:.4f}, Gini: {:.4f}]".format(clf0_accuracy, 
+                                                                                                clf0_f1,
+                                                                                                clf0_gini))
+        
+        # Scoring step
+        temp = X[:]
+        
+        # First to score for control
+        temp['treatment'] = 0
+        temp['conversion'] = y
+        # Using the propensity model to predict propensity scores for control
+        temp['c_prop'] = clf0.predict_proba(temp.iloc[:,:-1])[:,1]
+        
+        # Then to score for treatment
+        temp['treatment'] = 1
+        # Using the propensity model to predict propensity scores for treatment
+        temp['t_prop'] = clf0.predict_proba(temp.iloc[:,:-2])[:,1]
+        
+        # Reset treatment column
+        temp['treatment'] = t
+        
+        # Difference between treatment propensity and control propensity gives
+        # the uplift in slearner
+        temp['uplift'] = temp['t_prop'] - temp['c_prop']
+        
+        # Prepare a final table for output
+        final = temp
+        
+        return final, clf0
     
     def tlearner_uplift(self, X, t, y):
         '''

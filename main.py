@@ -383,7 +383,7 @@ class uplift_model:
         final : pandas.core.frame.DataFrame
             DESCRIPTION.
         clf0 : xgboost.sklearn.XGBClassifier
-            Our mu0 model -- model trained on control group.
+            Our classifier -- model trained on all data.
 
         '''
         temp = X[:]

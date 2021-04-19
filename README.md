@@ -50,7 +50,10 @@
 ## About the Project
 Here I have created some code to help speed up the process of building uplift models. You will need to first prepare a modelling dataset yourself with features, a treatment (yes/no) column and a target/label column. 
 
-At the moment, we can only do X-learners. S-learners will be coming soon.
+[23/02/2021] X-learner function added and tested <br>
+[23/03/2021] T-learner function added and tested <br>
+[19/04/2021] S-learner function added and tested <br>
+[Coming soon] ML interpretability -- functions that will enable users to see drivers for outcome <br>
 
 See [this jupyter notebook](https://github.com/hklchung/UpliftModelling/blob/main/How%20to%20run%20uplift_model.ipynb) for further details on how to use this package.
 
